@@ -1,22 +1,17 @@
 package types
 
 import (
-
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
-// Local code type
-type CodeType = sdk.CodeType
-
+// DefaultCodespace is the Module Name
 const (
-	// Default nameservice codespace
 	DefaultCodespace sdk.CodespaceType = ModuleName
 
-	// CodeInvalid      CodeType = 101
+	CodeNameDoesNotExist sdk.CodeType = 101
 )
 
-// TODO: Fill out some custom errors for the module
-// You can see how they are constructed below:
-// func ErrInvalid(codespace sdk.CodespaceType) sdk.Error {
-// 	return sdk.NewError(codespace, CodeInvalid, "custom error message")
-// }
+// ErrNameDoesNotExist is the error for name not existing
+func ErrNameDoesNotExist(codespace sdk.CodespaceType) sdk.Error {
+	return sdk.NewError(codespace, CodeNameDoesNotExist, "Name does not exist")
+}
