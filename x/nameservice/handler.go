@@ -7,39 +7,61 @@ import (
 	"github.com/randomshinichi/cosmostutorial/x/nameservice/internal/types"
 )
 
-// NewHandler creates an sdk.Handler for all the nameservice type messages
-func NewHandler(k Keeper) sdk.Handler {
+// NewHandler returns a handler for "nameservice" type messages.
+func NewHandler(keeper Keeper) sdk.Handler {
 	return func(ctx sdk.Context, msg sdk.Msg) sdk.Result {
-		ctx = ctx.WithEventManager(sdk.NewEventManager())
 		switch msg := msg.(type) {
-		// TODO: Define your msg cases
-		// 
-		//Example:
-		// case MsgSet<Action>:
-		// 	return handleMsg<Action>(ctx, keeper, msg)
+		case MsgSetName:
+			return handleMsgSetName(ctx, keeper, msg)
+		case MsgBuyName:
+			return handleMsgBuyName(ctx, keeper, msg)
+		case MsgDeleteName:
+			return handleMsgDeleteName(ctx, keeper, msg)
 		default:
-			errMsg := fmt.Sprintf("unrecognized %s message type: %T", types.ModuleName,  msg)
+			errMsg := fmt.Sprintf("Unrecognized nameservice Msg type: %v", msg.Type())
 			return sdk.ErrUnknownRequest(errMsg).Result()
 		}
 	}
 }
 
-// handde<Action> does x
-func handleMsg<Action>(ctx sdk.Context, msg MsgType, k Keeper) sdk.Result {
-
-	err := k.<Action>(ctx, msg.ValidatorAddr)
-	if err != nil {
-		return err.Result()
+// Handle a message to set name
+func handleMsgSetName(ctx sdk.Context, keeper Keeper, msg MsgSetName) sdk.Result {
+	if !msg.Owner.Equals(keeper.GetOwner(ctx, msg.Name)) { // Checks if the the msg sender is the same as the current owner
+		return sdk.ErrUnauthorized("Incorrect Owner").Result() // If not, throw an error
 	}
+	keeper.SetName(ctx, msg.Name, msg.Value) // If so, set the name to the value specified in the msg.
+	return sdk.Result{}                      // return
+}
 
-	// TODO: Define your msg events
-	ctx.EventManager().EmitEvent(
-		sdk.NewEvent(
-			sdk.EventTypeMessage,
-			sdk.NewAttribute(sdk.AttributeKeyModule, types.AttributeValueCategory),
-			sdk.NewAttribute(sdk.AttributeKeySender, msg.ValidatorAddr.String()),
-		),
-	)
+// Handle a message to buy name
+func handleMsgBuyName(ctx sdk.Context, keeper Keeper, msg MsgBuyName) sdk.Result {
+	if keeper.GetPrice(ctx, msg.Name).IsAllGT(msg.Bid) { // Checks if the bid price is greater than the price paid by the current owner
+		return sdk.ErrInsufficientCoins("Bid not high enough").Result() // If not, throw an error
+	}
+	if keeper.HasOwner(ctx, msg.Name) {
+		err := keeper.CoinKeeper.SendCoins(ctx, msg.Buyer, keeper.GetOwner(ctx, msg.Name), msg.Bid)
+		if err != nil {
+			return sdk.ErrInsufficientCoins("Buyer does not have enough coins").Result()
+		}
+	} else {
+		_, err := keeper.CoinKeeper.SubtractCoins(ctx, msg.Buyer, msg.Bid) // If so, deduct the Bid amount from the sender
+		if err != nil {
+			return sdk.ErrInsufficientCoins("Buyer does not have enough coins").Result()
+		}
+	}
+	keeper.SetOwner(ctx, msg.Name, msg.Buyer)
+	keeper.SetPrice(ctx, msg.Name, msg.Bid)
+	return sdk.Result{}
+}
 
-	return sdk.Result{Events: ctx.EventManager().Events()}
+// Handle a message to delete name
+func handleMsgDeleteName(ctx sdk.Context, keeper Keeper, msg MsgDeleteName) sdk.Result {
+	if !keeper.IsNamePresent(ctx, msg.Name) {
+		return types.ErrNameDoesNotExist(types.DefaultCodespace).Result()
+	}
+	if !msg.Owner.Equals(keeper.GetOwner(ctx, msg.Name)) {
+		return sdk.ErrUnauthorized("Incorrect Owner").Result()
+	}
+	keeper.DeleteWhois(ctx, msg.Name)
+	return sdk.Result{}
 }
