@@ -1,39 +1,77 @@
 package keeper
 
 import (
-	"fmt"
-
-	abci "github.com/tendermint/tendermint/abci/types"
-
-	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/codec"
-	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/randomshinichi/cosmostutorial/x/nameservice/internal/types"
+
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	abci "github.com/tendermint/tendermint/abci/types"
 )
 
-// NewQuerier creates a new querier for nameservice clients.
-func NewQuerier(k Keeper) sdk.Querier {
-	return func(ctx sdk.Context, path []string, req abci.RequestQuery) ([]byte, sdk.Error) {
+// query endpoints supported by the nameservice Querier
+const (
+	QueryResolve = "resolve"
+	QueryWhois   = "whois"
+	QueryNames   = "names"
+)
+
+// NewQuerier is the module level router for state queries
+func NewQuerier(keeper Keeper) sdk.Querier {
+	return func(ctx sdk.Context, path []string, req abci.RequestQuery) (res []byte, err sdk.Error) {
 		switch path[0] {
-		case types.QueryParams:
-			return queryParams(ctx, k)
-			// TODO: Put the modules query routes
+		case QueryResolve:
+			return queryResolve(ctx, path[1:], req, keeper)
+		case QueryWhois:
+			return queryWhois(ctx, path[1:], req, keeper)
+		case QueryNames:
+			return queryNames(ctx, req, keeper)
 		default:
 			return nil, sdk.ErrUnknownRequest("unknown nameservice query endpoint")
 		}
 	}
 }
 
-func queryParams(ctx sdk.Context, k Keeper) ([]byte, sdk.Error) {
-	params := k.GetParams(ctx)
+// nolint: unparam
+func queryResolve(ctx sdk.Context, path []string, req abci.RequestQuery, keeper Keeper) ([]byte, sdk.Error) {
+	value := keeper.ResolveName(ctx, path[0])
 
-	res, err := codec.MarshalJSONIndent(types.ModuleCdc, params)
+	if value == "" {
+		return []byte{}, sdk.ErrUnknownRequest("could not resolve name")
+	}
+
+	res, err := codec.MarshalJSONIndent(keeper.cdc, QueryResResolve{value})
 	if err != nil {
-		return nil, sdk.ErrInternal(sdk.AppendMsgToErr("failed to marshal JSON", err.Error()))
+		panic("could not marshal result to JSON")
 	}
 
 	return res, nil
 }
 
-// TODO: Add the modules query functions
-// They will be similar to the above one: queryParams()
+// nolint: unparam
+func queryWhois(ctx sdk.Context, path []string, req abci.RequestQuery, keeper Keeper) ([]byte, sdk.Error) {
+	whois := keeper.GetWhois(ctx, path[0])
+
+	res, err := codec.MarshalJSONIndent(keeper.cdc, whois)
+	if err != nil {
+		panic("could not marshal result to JSON")
+	}
+
+	return res, nil
+}
+
+func queryNames(ctx sdk.Context, req abci.RequestQuery, keeper Keeper) ([]byte, sdk.Error) {
+	var namesList types.QueryResNames
+
+	iterator := keeper.GetNamesIterator(ctx)
+
+	for ; iterator.Valid(); iterator.Next() {
+		namesList = append(namesList, string(iterator.Key()))
+	}
+
+	res, err := codec.MarshalJSONIndent(keeper.cdc, namesList)
+	if err != nil {
+		panic("could not marshal result to JSON")
+	}
+
+	return res, nil
+}
